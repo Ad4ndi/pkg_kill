@@ -1,0 +1,54 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+die "[-] Program requires root permissions (use doas or su)\n" if $< != 0;
+
+
+my @pkgfetc_pids = grep { /\d+/ } `ps aux | grep '_pkgfetc' | grep -v grep | awk '{print \$2}'`;
+chomp @pkgfetc_pids;
+
+die "[-] _pkgfetc processes not found\n" unless @pkgfetc_pids;
+print "[+] _pkgfetc processes found: @pkgfetc_pids\n";
+print "-" x 40 . "\n";
+
+my %parents;
+foreach my $pid (@pkgfetc_pids) {
+    my $ppid = `ps -o ppid= -p $pid 2>/dev/null`;
+    chomp $ppid;
+    $ppid =~ s/^\s+|\s+$//g;
+
+    next unless $ppid && $ppid =~ /^\d+$/;
+
+    my $info = `ps -p $ppid -o pid= -o comm= -o args= 2>/dev/null`;
+    chomp $info;
+
+    if ($info =~ /^(\d+)\s+(\S+)\s+(.*)$/) {
+        $parents{$ppid} = {
+            command => $2,
+            args    => $3,
+        };
+    } else {
+        $parents{$ppid} = {
+            command => 'unknown',
+            args    => 'unknown',
+        };
+    }
+}
+
+foreach my $ppid (keys %parents) {
+    my $info = $parents{$ppid};
+    print "[^] Parent PID: $ppid\n";
+    print "[#] Command: $info->{command}\n";
+    print "[!] Args: $info->{args}\n";
+
+    print "[%] Killing process $ppid...\n";
+    system("kill -9 $ppid") == 0
+        ? print "[+] Success\n"
+        : print "[-] Error: $!\n";
+
+    print "-" x 40 . "\n";
+}
+
+print "[&] Database has been unlocked!\n";
